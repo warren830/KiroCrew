@@ -93,6 +93,7 @@ export default function ChatPane({
   const activeSlot = useAppSelector((s) => s.chat.activeSlot)
   const streamState = useAppSelector((s) => selectSlotStreamState(s, slotKey))
   const running = streamState !== 'idle'
+  const steerable = streamState === 'streaming' || streamState === 'tool_running'
   // Per-slot context-window usage for the input-bar ring (mirrors ChatPage; the
   // store keys these by slot). Default 0 so the ring always renders, exactly
   // like single chat.
@@ -110,6 +111,20 @@ export default function ChatPane({
   // and skips the optimistic user bubble (the backend returns a "queued"
   // message instead, so an optimistic bubble would render a duplicate).
   const busy = useAppSelector((s) => selectComposerBusy(s, slotKey))
+  const [queueSteerPendingIds, setQueueSteerPendingIds] = useState<ReadonlySet<string>>(new Set())
+  const queueSteerMutation = useMutation({
+    mutationFn: (queueId: string) => api.steerQueuedMessage(slotKey, queueId),
+    onMutate: (queueId) => {
+      setQueueSteerPendingIds(prev => new Set(prev).add(queueId))
+    },
+    onSettled: (_data, _error, queueId) => {
+      setQueueSteerPendingIds(prev => {
+        const next = new Set(prev)
+        next.delete(queueId)
+        return next
+      })
+    },
+  })
   // Parent link for the "↳ fork of <parent>" tag. forked_from is the parent's
   // history key (dashboard:<slot>); strip the prefix to match the bare slot key.
   const parentKey = paneSlot?.forked_from ? paneSlot.forked_from.replace(/^dashboard:/, '') : null
@@ -522,7 +537,10 @@ export default function ChatPane({
     dispatch(cancelQueuedMessage({ slot: slotKey, queue_id: queueId }))
     api.cancelQueuedMessage(slotKey, queueId).catch(() => undefined)
   }, [dispatch, slotKey])
-  const onInterruptQueued = useCallback((queueId: string) => { api.interruptSlot(slotKey, queueId).catch(() => undefined) }, [slotKey])
+  const onSteerQueued = useCallback((queueId: string) => {
+    if (queueSteerPendingIds.has(queueId)) return
+    queueSteerMutation.mutate(queueId)
+  }, [queueSteerMutation, queueSteerPendingIds])
   const onEditQueued = useCallback((queueId: string, content: string) => {
     const trimmed = content.trim()
     if (!trimmed) return
@@ -671,7 +689,7 @@ export default function ChatPane({
 
         <SubagentDeliveryProgress count={systemDeliveryCount} />
         {queuedMessages.length > 0 && (
-          <QueueStack messages={queuedMessages} onCancel={onCancelQueued} onInterrupt={onInterruptQueued} onEdit={onEditQueued} onReorder={onReorderQueued} />
+          <QueueStack messages={queuedMessages} onCancel={onCancelQueued} onSteer={steerable ? onSteerQueued : undefined} onEdit={onEditQueued} onReorder={onReorderQueued} pendingIds={queueSteerPendingIds} />
         )}
 
         {/* The pending ask_question card renders per pane: in split mode the

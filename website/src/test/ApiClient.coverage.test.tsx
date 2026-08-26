@@ -860,6 +860,13 @@ describe('request bodies with conditionally-omitted keys', () => {
     expect(call(1).body).toEqual({ queue_id: 'q1' })
   })
 
+  it('steerQueuedMessage targets one encoded queue entry', async () => {
+    await api.steerQueuedMessage('chat/one', 'q two')
+    expect(call().method).toBe('POST')
+    expect(call().url).toContain('/api/chat/slots/chat%2Fone/queue/q%20two/steer')
+    expect(call().body).toEqual({})
+  })
+
   it('uninstallApp only names the retention exceptions it needs', async () => {
     await api.uninstallApp('demo')
     expect(call().body).toEqual({})

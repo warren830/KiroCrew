@@ -135,10 +135,32 @@ function set(next: BottomTerminalState) {
 /* ── Actions (module functions so non-React callers — e.g. keyboard handlers,
  *    "Run in terminal" — can drive the panel too) ── */
 
-/** Open the panel, minting a first terminal tab if it has none. */
+/** Open the panel in the selected chat project's working tree.
+ *
+ * Existing shells stay alive. When a project is supplied, focus a tab that was
+ * spawned for it; otherwise mint a fresh tab there. With no selected project,
+ * preserve the ordinary reopen behavior and restore the previous active tab. */
 export function openBottomTerminal(cwd?: string): void {
-  const tabs = state.tabs.length ? state.tabs : [{ id: mintId(), cwd }]
-  set({ ...state, open: true, tabs, activeId: state.activeId ?? tabs[0].id })
+  if (!cwd) {
+    const tabs = state.tabs.length ? state.tabs : [{ id: mintId() }]
+    set({ ...state, open: true, tabs, activeId: state.activeId ?? tabs[0].id })
+    return
+  }
+
+  const matching = state.tabs.find(tab => tab.cwd === cwd)
+  if (matching) {
+    set({ ...state, open: true, activeId: matching.id })
+    return
+  }
+  if (state.tabs.length < MAX_TERMINALS) {
+    const tab = { id: mintId(), cwd }
+    set({ ...state, open: true, tabs: [...state.tabs, tab], activeId: tab.id })
+    return
+  }
+
+  // Never kill or silently cd an existing shell to satisfy the opener. At the
+  // cap, show the panel as-is and let the operator close a tab explicitly.
+  set({ ...state, open: true, activeId: state.activeId ?? state.tabs[0]?.id ?? null })
 }
 
 /** Hide the panel WITHOUT killing its shells — they stay warm for reopen. */

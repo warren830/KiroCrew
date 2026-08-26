@@ -66,6 +66,28 @@ describe('QueueStack inline edit', () => {
   })
 })
 
+describe('QueueStack true steer action', () => {
+  it('steers the selected queue item and blocks duplicate clicks while pending', () => {
+    const onSteer = vi.fn()
+    const { rerender } = render(
+      <QueueStack messages={[queued('additional context', 'q1')]} onSteer={onSteer} />,
+    )
+    const steer = screen.getByLabelText('Steer')
+    expect(steer).toHaveAttribute('title', 'Act on this right away')
+    fireEvent.click(steer)
+    expect(onSteer).toHaveBeenCalledWith('q1')
+
+    rerender(
+      <QueueStack
+        messages={[queued('additional context', 'q1')]}
+        onSteer={onSteer}
+        pendingIds={new Set(['q1'])}
+      />,
+    )
+    expect(screen.getByLabelText('Steer')).toBeDisabled()
+  })
+})
+
 describe('system sub-agent delivery handling', () => {
   it('isSystemDelivery matches per-agent and batch completion announces only', () => {
     expect(isSystemDelivery(queued('[Subagent completion event]\nAgent `x` completed', 'q1'))).toBe(true)

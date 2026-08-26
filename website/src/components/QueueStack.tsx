@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, memo } from 'react'
 import { AnimatePresence, motion, useMotionValue, useSpring } from 'framer-motion'
-import { Hourglass, ChevronUp, X, Zap, Pencil, Check, Bot, Loader2, ArrowUp, ArrowDown } from 'lucide-react'
+import { Hourglass, ChevronUp, X, Pencil, Check, Bot, Loader2, ArrowUp, ArrowDown, Target } from 'lucide-react'
 import type { ChatMessage } from '../types'
 import { useImeGuard } from '../hooks/useImeGuard'
 
@@ -146,10 +146,10 @@ function EditInput({ initial, onCommit, onCancel }: {
   )
 }
 
-function QueueStackInner({ messages, onCancel, onInterrupt, onEdit, onReorder, fuseBelow = true, pendingIds }: {
+function QueueStackInner({ messages, onCancel, onSteer, onEdit, onReorder, fuseBelow = true, pendingIds }: {
   messages: ChatMessage[]
   onCancel?: (queueId: string) => void
-  onInterrupt?: (queueId: string) => void
+  onSteer?: (queueId: string) => void
   onEdit?: (queueId: string, content: string) => void
   /** Move a queued message one step toward the front (`next`) or the back
    *  (`later`) of the run order. Index 0 runs first. */
@@ -360,15 +360,15 @@ function QueueStackInner({ messages, onCancel, onInterrupt, onEdit, onReorder, f
                           <Pencil size={13} />
                         </button>
                       )}
-                      {onInterrupt && showActions && (
+                      {onSteer && showActions && (
                         <button
                           className="shrink-0 p-0.5 rounded hover:bg-[var(--bg-hover)] transition-colors text-[var(--text)] disabled:opacity-40 disabled:cursor-not-allowed"
-                          title={i18nT('components.queueStack.interrupt_current_turn_and_send_this_now')}
-                          aria-label={i18nT('components.queueStack.send_now')}
+                          title={i18nT('components.chatInput.steer_act_on_this_right_away_desc')}
+                          aria-label={i18nT('components.chatInput.steer')}
                           disabled={isPending}
-                          onClick={(e) => { e.stopPropagation(); onInterrupt(queueId!) }}
+                          onClick={(e) => { e.stopPropagation(); onSteer(queueId!) }}
                         >
-                          <Zap size={13} fill="currentColor" />
+                          <Target className="lucide-inline" />
                         </button>
                       )}
                       {onCancel && showActions && (
@@ -409,7 +409,7 @@ export default memo(QueueStackInner, (prev, next) =>
   prev.pendingIds === next.pendingIds &&
   prev.messages.every((m, i) => m === next.messages[i]) &&
   prev.onCancel === next.onCancel &&
-  prev.onInterrupt === next.onInterrupt &&
+  prev.onSteer === next.onSteer &&
   prev.onEdit === next.onEdit &&
   prev.onReorder === next.onReorder
 )

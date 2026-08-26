@@ -73,7 +73,7 @@ vi.mock('../pages/chat', async () => {
 interface QueueProps {
   messages: ChatMessage[]
   onCancel: (id: string) => void
-  onInterrupt: (id: string) => void
+  onSteer: (id: string) => void
   onEdit: (id: string, content: string) => void
   onReorder: (id: string, direction: 'next' | 'later') => void
 }
@@ -537,8 +537,13 @@ describe('ChatPage — queued message actions', () => {
   ]
 
   async function renderWithQueue(queue = TWO) {
-    const out = renderChatPage([msg('user', 'first', { ts: '2026-08-12T07:00:00Z' })], { queue })
+    const out = renderChatPage([msg('user', 'first', { ts: '2026-08-12T07:00:00Z' })], {
+      queue,
+      chat: { slotRunning: true, slotState: 'running' },
+    })
     await waitFor(() => expect(queueProps?.messages?.length).toBe(2))
+    act(() => { out.store.dispatch({ type: 'chat/setSlotRunning', payload: true }) })
+    await waitFor(() => expect(typeof queueProps?.onSteer).toBe('function'))
     return out
   }
 
@@ -551,10 +556,11 @@ describe('ChatPage — queued message actions', () => {
     await waitFor(() => expect(queueProps!.messages.map(m => m.meta?.queueId)).toEqual(['q2']))
   })
 
-  it('interrupting a queued card asks the server to interrupt that entry only', async () => {
+  it('steers a queued card into the currently-running turn', async () => {
     await renderWithQueue()
-    act(() => { queueProps!.onInterrupt('q2') })
-    expect(apiMocks.interruptSlot).toHaveBeenCalledWith('chat-1', 'q2')
+    act(() => { queueProps!.onSteer('q2') })
+    await waitFor(() => expect(apiMocks.steerQueuedMessage).toHaveBeenCalledWith('chat-1', 'q2'))
+    expect(apiSpy('interruptSlot')).not.toHaveBeenCalled()
     expect(apiSpy('cancelQueuedMessage')).not.toHaveBeenCalled()
   })
 

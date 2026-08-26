@@ -3517,13 +3517,14 @@ def _requeue_unconsumed_steers(state: "DashboardState", slot: "_ChatSlot") -> No
         _did = getattr(slot, "_steer_delivery_ids", {}).pop(steer_msg, "")
         if _did:
             _meta["steer_delivery_id"] = _did
-        # Provenance is derivable, not guessed: `steer_into_running_turn` has
-        # exactly one caller (the api_chat composer branch), and app isolation
-        # confines app-surface requests to app-scoped slots — so every steer
-        # into a NON-app slot came from the authenticated human composer. That
-        # provenance is what exempts the requeued card from the LINKED drop,
-        # exactly as the composer's own queued
-        # fallback is exempt; an app slot's steers stay unexempted (False).
+        # Provenance is derivable, not guessed: the production callers are the
+        # authenticated-human composer and the queued-card endpoint. Both refuse
+        # app-authenticated requests; the queued-card path also requires an
+        # unscoped slot and an entry carrying authenticated-human provenance.
+        # Therefore every steer into a NON-app slot came from a human-facing
+        # entry point. That provenance exempts the requeued card from the LINKED
+        # drop exactly as the composer's own queued fallback is exempt; an app
+        # slot's steers stay unexempted (False).
         qid = slot.queue_insert(
             0,
             steer_msg,

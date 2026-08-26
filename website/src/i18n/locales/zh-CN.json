@@ -6256,14 +6256,12 @@
       "cancel_and_move_back_to_input": "取消并退回到输入框",
       "cancel_queued_message": "取消排队消息",
       "edit_queued_message": "编辑排队消息",
-      "interrupt_current_turn_and_send_this_now": "中断当前轮次并立即发送",
       "queued": "已排队",
       "run_later": "推后运行",
       "run_sooner": "提前运行",
       "ready_processing_after_the_current_turn": "就绪 — 将在当前轮次结束后处理",
       "save": "保存",
       "save_edit": "保存修改",
-      "send_now": "立即发送",
       "sub_agent_result_other": "{{count}} 个子代理结果"
     },
     "readingWidthToggle": {

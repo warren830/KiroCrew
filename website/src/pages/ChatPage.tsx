@@ -1166,6 +1166,21 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
     mutationFn: (text: string) => api.steerChat(text, activeSlot!),
     onError: (e) => { console.error('steer failed', e) },
   })
+  const [queueSteerPendingIds, setQueueSteerPendingIds] = useState<ReadonlySet<string>>(new Set())
+  const queueSteerMutation = useMutation({
+    mutationFn: ({ slot, queueId }: { slot: string; queueId: string }) =>
+      api.steerQueuedMessage(slot, queueId),
+    onMutate: ({ queueId }) => {
+      setQueueSteerPendingIds(prev => new Set(prev).add(queueId))
+    },
+    onSettled: (_data, _error, { queueId }) => {
+      setQueueSteerPendingIds(prev => {
+        const next = new Set(prev)
+        next.delete(queueId)
+        return next
+      })
+    },
+  })
   const [reasoningEffortDropdown, setReasoningEffortDropdown] = useState(false)
   const [reasoningEffortBtnRect, setReasoningEffortBtnRect] = useState<DOMRect | null>(null)
   const reasoningEffortDropdownRef = useRef<HTMLDivElement>(null)
@@ -5798,10 +5813,10 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
     api.cancelQueuedMessage(activeSlot, queueId).catch(() => {})
   }, [activeSlot, dispatch])
 
-  const handleInterruptQueued = useCallback((queueId: string) => {
-    if (!activeSlot) return
-    api.interruptSlot(activeSlot, queueId).catch(() => {})
-  }, [activeSlot])
+  const handleSteerQueued = useCallback((queueId: string) => {
+    if (!activeSlot || queueSteerPendingIds.has(queueId)) return
+    queueSteerMutation.mutate({ slot: activeSlot, queueId })
+  }, [activeSlot, queueSteerMutation, queueSteerPendingIds])
 
   const handleEditQueued = useCallback((queueId: string, content: string) => {
     if (!activeSlot) return
@@ -7244,7 +7259,7 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
               {!(activityOpen && !search.isOpen && tabsCtl.tabs.find(t => t.id === tabsCtl.activeId)?.kind === 'subagents') && <SubagentProgressBar slot={activeSlot} />}
               {!(activityOpen && !search.isOpen && tabsCtl.tabs.find(t => t.id === tabsCtl.activeId)?.kind === 'workflows') && <WorkflowProgressBar slot={activeSlot} />}
               <SubagentDeliveryProgress count={systemDeliveryCount} />
-              <QueueStack messages={queuedMessages} onCancel={handleCancelQueued} onInterrupt={handleInterruptQueued} onEdit={handleEditQueued} onReorder={handleReorderQueued} fuseBelow={followUpOptions.length === 0 && !knowledgeFetch.pendingKnowledge} />
+              <QueueStack messages={queuedMessages} onCancel={handleCancelQueued} onSteer={slotRunning && !slotStopping ? handleSteerQueued : undefined} onEdit={handleEditQueued} onReorder={handleReorderQueued} pendingIds={queueSteerPendingIds} fuseBelow={followUpOptions.length === 0 && !knowledgeFetch.pendingKnowledge} />
               {flyingQuote && <FlyingQuote text={flyingQuote.text} from={flyingQuote.from} targetRef={inputAreaRef} onComplete={() => setFlyingQuote(null)} />}
               <div ref={inputAreaRef} className="relative z-10">
               {/* The refused-press answer sits directly above the composer,

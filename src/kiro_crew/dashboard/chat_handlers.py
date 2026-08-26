@@ -75,6 +75,7 @@ from kiro_crew.dashboard.chat_utils import (
     _remove_queued_by_id,
     _sync_dashboard_slots,
     effective_session_key,
+    is_system_injection_item,
     slot_history_key,
 )
 from kiro_crew.dashboard.state import (
@@ -2935,6 +2936,232 @@ async def api_chat_slot_interrupt(request: web.Request) -> web.Response:
         metadata={"slot": name, "queue_id": queue_id},
     )
     return web.json_response({"ok": True, "outcome": outcome})
+
+
+def _audit_queue_steer(
+    slot: _ChatSlot | None,
+    name: str,
+    queue_id: str,
+    *,
+    outcome: str,
+    reason: str = "",
+    delivery: str = "",
+) -> None:
+    """Record one terminal queued-steer outcome without storing message text."""
+    metadata = {"slot": name, "queue_id": queue_id}
+    if reason:
+        metadata["reason"] = reason
+    if delivery:
+        metadata["delivery"] = delivery
+    sel().log_tool_invocation(
+        session_key=effective_session_key(slot) if slot is not None else _history_key_for(name),
+        agent=(getattr(slot, "agent", "") if slot is not None else "") or "kirocrew",
+        source="dashboard",
+        tool_name="queue_steer",
+        tool_kind="command",
+        outcome=outcome,
+        metadata=metadata,
+    )
+
+
+def _restore_claimed_queue_item(
+    slot: _ChatSlot,
+    claimed: dict[str, Any],
+    *,
+    before_ids: tuple[str, ...],
+    after_ids: tuple[str, ...],
+) -> None:
+    """Restore a failed steer relative to the nearest surviving queue anchors.
+
+    Queue cancellation and turn teardown can run while the steer RPC is awaiting.
+    A numeric index therefore goes stale; stable queue ids preserve the selected
+    entry's order relative to surviving work. If all original neighbours are gone,
+    the restored entry remains ahead of work enqueued after its claim.
+    """
+    positions = {
+        item_id: index
+        for index, item in enumerate(slot._queue)
+        if isinstance((item_id := item.get("id")), str)
+    }
+    predecessor_index = next(
+        (positions[item_id] for item_id in reversed(before_ids) if item_id in positions),
+        None,
+    )
+    successor_index = next(
+        (positions[item_id] for item_id in after_ids if item_id in positions),
+        None,
+    )
+
+    if predecessor_index is not None and (
+        successor_index is None or predecessor_index < successor_index
+    ):
+        insert_at = predecessor_index + 1
+    elif successor_index is not None:
+        insert_at = successor_index
+    else:
+        original_neighbour_ids = set(before_ids).union(after_ids)
+        insert_at = next(
+            (
+                index
+                for index, item in enumerate(slot._queue)
+                if item.get("id") not in original_neighbour_ids
+            ),
+            len(slot._queue),
+        )
+    slot._queue.insert(insert_at, claimed)
+
+
+async def api_chat_slot_queue_steer(request: web.Request) -> web.Response:
+    """Fold one queued user message into the running turn without cancelling it.
+
+    Claiming the queue item before the steer RPC suspends prevents the normal
+    turn-finalizer from draining the same text as a second turn. An unavailable
+    steer restores the complete entry relative to its surviving neighbours.
+    """
+    state: DashboardState = request.app["state"]
+    name = request.match_info["slot"]
+    queue_id = request.match_info["queue_id"]
+    slot = state._slots.get(name)
+    if slot is None:
+        _audit_queue_steer(
+            None,
+            name,
+            queue_id,
+            outcome="noop",
+            reason="slot_not_found",
+        )
+        return web.json_response({"error": "not found", "code": "slot_not_found"}, status=404)
+    denied = _deny_cross_app_slot_access(request, slot, name, "slot_queue_steer")
+    if denied is not None:
+        return denied
+    if request.get("app", "") or getattr(slot, "_app", ""):
+        _audit_queue_steer(
+            slot,
+            name,
+            queue_id,
+            outcome="denied",
+            reason="app_scoped_context",
+        )
+        return web.json_response(
+            {
+                "error": "app-scoped sessions and callers cannot steer a running turn",
+                "code": "app_scoped_caller",
+            },
+            status=403,
+        )
+    if not slot.running or slot._stop_state != "idle":
+        _audit_queue_steer(
+            slot,
+            name,
+            queue_id,
+            outcome="noop",
+            reason="turn_not_steerable",
+        )
+        return web.json_response(
+            {"error": "no steerable turn is running", "code": "turn_not_steerable"},
+            status=409,
+        )
+
+    claimed_index = next(
+        (i for i, item in enumerate(slot._queue) if item.get("id") == queue_id),
+        -1,
+    )
+    if claimed_index < 0:
+        _audit_queue_steer(
+            slot,
+            name,
+            queue_id,
+            outcome="noop",
+            reason="queue_item_not_found",
+        )
+        return web.json_response(
+            {"error": "queue item not found", "code": "queue_item_not_found"},
+            status=404,
+        )
+    claimed = slot._queue[claimed_index]
+    if (
+        is_system_injection_item(claimed)
+        or bool(claimed.get("kind"))
+        or claimed.get("_directive_user_origin") is not True
+        or "_on_consumed" in claimed
+        or "_on_irreversibly_consumed" in claimed
+    ):
+        _audit_queue_steer(
+            slot,
+            name,
+            queue_id,
+            outcome="denied",
+            reason="queue_item_not_steerable",
+        )
+        return web.json_response(
+            {
+                "error": "automatic queue items cannot be steered manually",
+                "code": "queue_item_not_steerable",
+            },
+            status=409,
+        )
+
+    before_ids = tuple(
+        item_id
+        for item in slot._queue[:claimed_index]
+        if isinstance((item_id := item.get("id")), str)
+    )
+    after_ids = tuple(
+        item_id
+        for item in slot._queue[claimed_index + 1 :]
+        if isinstance((item_id := item.get("id")), str)
+    )
+    # No await between locating and claiming: ownership moves from the queue
+    # drain to chat_delivery's pending-steer ledger as one event-loop action.
+    slot._queue.pop(claimed_index)
+    outcome = await steer_into_running_turn(state, slot, claimed["content"])
+    if outcome not in (STEER_STEERED, STEER_REQUEUED):
+        _restore_claimed_queue_item(
+            slot,
+            claimed,
+            before_ids=before_ids,
+            after_ids=after_ids,
+        )
+        _audit_queue_steer(
+            slot,
+            name,
+            queue_id,
+            outcome="failed",
+            reason="steer_unavailable",
+        )
+        return web.json_response(
+            {
+                "error": "the running turn could not accept a steer",
+                "code": "steer_unavailable",
+            },
+            status=409,
+        )
+
+    _remove_queued_by_id(slot.messages, queue_id)
+    slot.invalidate_source_links()
+    state.broadcast_ws(
+        "queue_pop",
+        {
+            "slot": name,
+            "content": _redact_for_display(claimed["content"]),
+            "queue_id": queue_id,
+        },
+    )
+    state.push_slots_update()
+    _audit_queue_steer(
+        slot,
+        name,
+        queue_id,
+        outcome="success",
+        delivery=outcome,
+    )
+    return web.json_response(
+        {
+            "ok": True,
+            "steered": outcome == STEER_STEERED,
+            "queued": outcome == STEER_REQUEUED,
+        }
+    )
 
 
 async def api_chat_slot_queue_cancel(request: web.Request) -> web.Response:

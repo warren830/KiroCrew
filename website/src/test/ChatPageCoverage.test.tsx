@@ -47,7 +47,7 @@ import type { ChatMessage } from '../types'
 interface QueueStackProps {
   messages: ChatMessage[]
   onCancel: (queueId: string) => void
-  onInterrupt: (queueId: string) => void
+  onSteer: (queueId: string) => void
   onEdit: (queueId: string, content: string) => void
   onReorder: (queueId: string, direction: 'next' | 'later') => void
 }
@@ -667,12 +667,15 @@ describe('ChatPage queued-message controls', () => {
     await waitFor(() => expect(queueProps!.messages.map(m => m.content)).toEqual(['then deploy']))
   })
 
-  it('interrupting a queued card calls the interrupt endpoint for that slot', async () => {
-    renderChatPage([queued('q1', 'run the migration')])
+  it('steers a queued card into the live turn without interrupting it', async () => {
+    const { store } = renderChatPage([queued('q1', 'run the migration')])
     await waitFor(() => expect(queueProps).not.toBeNull())
+    act(() => { store.dispatch({ type: 'chat/setSlotRunning', payload: true }) })
+    await waitFor(() => expect(typeof queueProps?.onSteer).toBe('function'))
 
-    act(() => queueProps!.onInterrupt('q1'))
-    await waitFor(() => expect(apiMocks.interruptSlot).toHaveBeenCalledWith('chat-1', 'q1'))
+    act(() => queueProps!.onSteer('q1'))
+    await waitFor(() => expect(apiMocks.steerQueuedMessage).toHaveBeenCalledWith('chat-1', 'q1'))
+    expect(apiSpy('interruptSlot')).not.toHaveBeenCalled()
   })
 
   it('editing a queued card trims the text and ignores a whitespace-only edit', async () => {

@@ -17,7 +17,7 @@ import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithProviders, createTestStore } from './helpers'
 import { TerminalTabsView } from '../components/BottomTerminalPanel'
-import { __resetBottomTerminal, openBottomTerminal, useBottomTerminal } from '../hooks/useBottomTerminal'
+import { __resetBottomTerminal, closeBottomTerminal, openBottomTerminal, useBottomTerminal } from '../hooks/useBottomTerminal'
 import { selectActiveSlotProject } from '../store/chatSlice'
 import { renderHook } from '@testing-library/react'
 import type { RootState } from '../store'
@@ -87,6 +87,45 @@ describe('selectActiveSlotProject', () => {
       ...state,
       dashboard: { ...state.dashboard, slots: [] },
     } as RootState)).toBeUndefined()
+  })
+})
+
+describe('openBottomTerminal — selected workspace', () => {
+  it('creates and focuses a terminal for a different selected project', () => {
+    openBottomTerminal('/repos/old-project')
+    closeBottomTerminal()
+    openBottomTerminal('/repos/current-project')
+
+    const { result } = renderHook(() => useBottomTerminal())
+    expect(result.current.tabs.map(tab => tab.cwd)).toEqual([
+      '/repos/old-project',
+      '/repos/current-project',
+    ])
+    expect(result.current.activeId).toBe(result.current.tabs[1].id)
+  })
+
+  it('focuses an existing terminal for the selected project without duplicating it', () => {
+    openBottomTerminal('/repos/project-a')
+    closeBottomTerminal()
+    openBottomTerminal('/repos/project-b')
+    closeBottomTerminal()
+    openBottomTerminal('/repos/project-a')
+
+    const { result } = renderHook(() => useBottomTerminal())
+    expect(result.current.tabs).toHaveLength(2)
+    expect(result.current.activeId).toBe(
+      result.current.tabs.find(tab => tab.cwd === '/repos/project-a')?.id,
+    )
+  })
+
+  it('preserves ordinary reopen behavior when no project is selected', () => {
+    openBottomTerminal('/repos/project-a')
+    closeBottomTerminal()
+    openBottomTerminal()
+
+    const { result } = renderHook(() => useBottomTerminal())
+    expect(result.current.tabs).toHaveLength(1)
+    expect(result.current.activeId).toBe(result.current.tabs[0].id)
   })
 })
 
