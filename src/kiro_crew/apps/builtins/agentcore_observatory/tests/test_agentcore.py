@@ -57,7 +57,7 @@ def test_every_listable_type_builds_its_declared_argv(
     result = agentcore.list_resource(CFG, rt.id, parents)
     assert result.ok is True, result.error
     assert result.items == [{"probe": rt.id}]
-    expected = [SVC, rt.list_verb]
+    expected = [rt.service, rt.list_verb]
     for param in rt.parent_params:
         expected += [param, "parent-id"]
     assert seen == [expected]

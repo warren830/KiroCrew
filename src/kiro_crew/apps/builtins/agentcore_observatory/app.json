@@ -2,7 +2,7 @@
   "name": "agentcore-observatory",
   "version": "0.1.0",
   "displayName": "AgentCore Observatory",
-  "description": "Read-only visibility into your Amazon Bedrock AgentCore deployments. See every runtime's state, which evaluators and online-evaluation configs are attached, and what is actually measurable — with the gaps labelled as gaps instead of shown as zeroes. Point it at an AWS profile name and a region; credentials are resolved by the aws CLI and never read or stored here.",
+  "description": "Visibility into your Amazon Bedrock AgentCore deployments, plus the two things a developer needs beyond an inventory: test a runtime with your own payload, and start a batch evaluation. See every runtime's state, which evaluators and online-evaluation configs are attached, and what is actually measurable — with the gaps labelled as gaps instead of shown as zeroes. Point it at an AWS profile name and a region; credentials are resolved by the aws CLI and never read or stored here.",
   "author": "kirocrew",
   "license": "MIT",
   "defaultEnabled": false,
@@ -11,7 +11,7 @@
     "Online-evaluation configs shown next to the evaluators they run, including the ones switched off",
     "Profile name and region only — no credential is ever read, written, or cached",
     "An authorization failure is reported as one, never as an account with nothing deployed",
-    "Read-only: every call is a list verb, and agent sessions are refused by the cloud chokepoint"
+    "Reads are list verbs only; invoking a runtime or starting an evaluation each needs its own explicit confirmation"
   ],
   "tags": [
     "aws",

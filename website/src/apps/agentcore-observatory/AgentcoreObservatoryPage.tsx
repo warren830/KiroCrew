@@ -43,8 +43,14 @@ import {
   type RootType,
 } from './api'
 import { GROUP_LABEL_KEY, TYPE_LABEL_KEY, rowBadges, rowKey, rowName } from './labels'
+import RuntimeTestPanel from './RuntimeTestPanel'
+import StartEvaluationPanel from './StartEvaluationPanel'
 
 const PROFILE_LIST_ID = 'agentcore-observatory-profiles'
+
+/** Catalog ids the content pane treats specially, because an ACTION attaches. */
+const RUNTIME_TYPE_ID = 'agent-runtimes'
+const BATCH_EVALUATION_TYPE_ID = 'batch-evaluations'
 
 /** A type or group with no catalog label falls back to its id, never to blank. */
 function labelFor(map: Record<string, string>, id: string): string {
@@ -200,6 +206,12 @@ function ResourceRow({
       {expanded && (
         <div className="pb-3 pl-6">
           <RawJson value={row} />
+          {/* Only a runtime can be invoked, and only with the ARN the row itself
+              carries — never one assembled from parts, which would let a typo
+              invoke a different runtime that happens to exist. */}
+          {type.id === RUNTIME_TYPE_ID && typeof row.agentRuntimeArn === 'string' && (
+            <RuntimeTestPanel runtimeArn={row.agentRuntimeArn} />
+          )}
           {type.children.map((child) => (
             <ChildList
               key={child.id}
@@ -274,7 +286,11 @@ function TypePane({ type }: { type: RootType }) {
           )}
           <ul>
             {list.items.map((row, i) => {
-              const key = rowName(row) || String(i)
+              // Structural, never content-derived: `list-agent-runtime-versions`
+              // returns the same base ARN and the same name for every version, so
+              // any key read off the row alone collides and expands sibling rows
+              // together. The index is always part of the key.
+              const key = rowKey(row, i)
               return (
                 <ResourceRow
                   key={key}
@@ -288,6 +304,10 @@ function TypePane({ type }: { type: RootType }) {
           </ul>
         </>
       )}
+      {/* Below the list, not above it: the first useful question about an
+          evaluation is what the last run said, and a trigger placed first invites
+          starting a duplicate of a job already in view. */}
+      {type.id === BATCH_EVALUATION_TYPE_ID && <StartEvaluationPanel />}
     </Card>
   )
 }
@@ -380,7 +400,15 @@ export default function AgentcoreObservatoryPage() {
               placeholder={i18nT('apps.agentcoreObservatory.page.profile_placeholder')}
               aria-label={i18nT('apps.agentcoreObservatory.page.profile_label')}
             />
-            <Input
+            {/* An empty profile is a legitimate choice, not a forgotten field: it
+                lets the `aws` CLI resolve its own default. Saying so is the
+                difference between a reader trusting the blank and re-typing a
+                profile name they did not need. */}
+            {!profile.trim() && (
+              <span className="text-sm text-muted">
+                {i18nT('apps.agentcoreObservatory.page.profile_default')}
+              </span>
+            )}            <Input
               value={region}
               onChange={(e) => setRegion(e.target.value)}
               placeholder={i18nT('apps.agentcoreObservatory.page.region_placeholder')}

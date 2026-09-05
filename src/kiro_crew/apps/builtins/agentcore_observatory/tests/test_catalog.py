@@ -12,13 +12,19 @@ import pytest
 
 from kiro_crew.apps.builtins.agentcore_observatory.backend import catalog
 
-#: Counts established from the live CLI: 28 list verbs minus
-#: `list-tags-for-resource` (a tag lookup, not a resource type) = 27 types, of
-#: which 10 require a parent identifier. `token-vault` is a 28th ROW but has no
-#: list verb, so it is a singleton rather than one of the 27 listable types.
-_LISTABLE = 27
+#: Counts established from the live CLI, split by the service that answers.
+#:
+#: Control plane: 28 list verbs minus `list-tags-for-resource` (a tag lookup, not
+#: a resource type) = 27 types, of which 10 require a parent identifier.
+#: `token-vault` is a further ROW but has no list verb, so it is a singleton
+#: rather than one of the listable types.
+#:
+#: Data plane: `list-batch-evaluations` adds 1 root-listable type. It is the only
+#: place a completed evaluation's status and evaluator set are readable through
+#: the API — online-evaluation results land in CloudWatch, not in a resource.
+_LISTABLE = 28
 _CHILDREN = 10
-_ROOT_LISTABLE = 17
+_ROOT_LISTABLE = 18
 
 
 def test_ids_are_unique() -> None:

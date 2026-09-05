@@ -46,8 +46,10 @@ from kiro_crew.cloud.aws import CloudActionDenied, run_aws
 
 logger = logging.getLogger(__name__)
 
-#: The control-plane service name as the CLI spells it.
-SERVICE = "bedrock-agentcore-control"
+#: Retained as the control-plane spelling for callers that predate per-type
+#: services. The argv builders read ``rt.service`` so a data-plane type (batch
+#: evaluations) reaches its own service without a branch here.
+SERVICE = catalog.SERVICE_CONTROL
 
 #: Per-call CLI timeout. A control-plane list is a single fast API call; a longer
 #: wait means the CLI is stuck resolving credentials (an SSO prompt it can never
@@ -195,7 +197,7 @@ def list_resource(
     if isinstance(built, str):
         return ListResult(ok=False, error=built)
 
-    base = [SERVICE, rt.list_verb] + built
+    base = [rt.service, rt.list_verb] + built
     items: list[dict[str, Any]] = []
     token = ""
     for _ in range(_MAX_PAGES):
@@ -232,7 +234,7 @@ def get_resource(
     if not cfg.configured:
         return ObjectResult(ok=False, error="no AWS region is configured")
 
-    args = [SERVICE, rt.get_verb]
+    args = [rt.service, rt.get_verb]
     for param, value in sorted((id_args or {}).items()):
         if not param.startswith("--") or not safe_identifier(value):
             return ObjectResult(ok=False, error=f"{param} is not a well-formed identifier")

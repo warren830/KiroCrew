@@ -23,6 +23,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+#: The two services these resources live on, spelled as the CLI spells them.
+#:
+#: The split is not cosmetic: the control plane owns the resource inventory,
+#: while batch evaluations and A/B tests are DATA-plane operations. A type
+#: therefore carries its own service rather than the query layer assuming one,
+#: which is what keeps a data-plane type a row here instead of a branch there.
+SERVICE_CONTROL = "bedrock-agentcore-control"
+SERVICE_DATA = "bedrock-agentcore"
+
+#: CloudWatch Logs. Not an AgentCore service and never a catalog row's service —
+#: it is here so every AWS service name this app can reach is declared in one
+#: place. Only :mod:`.payload_hints` uses it, and it is why the app's manifest
+#: asks for a CloudWatch Logs read permission on top of ``bedrock-agentcore*``.
+SERVICE_LOGS = "logs"
+
 #: Rail groups, in the order an operator reads them: what runs, how it is
 #: judged, what it remembers, what it can reach, then the supporting planes.
 GROUPS: tuple[str, ...] = (
@@ -62,6 +77,9 @@ class ResourceType:
     parent: str = ""
     parent_params: tuple[str, ...] = ()
     parent_fields: tuple[str, ...] = ()
+    #: Which service answers this type. Defaults to the control plane because 27
+    #: of the types live there; a data-plane type states it.
+    service: str = SERVICE_CONTROL
 
     @property
     def is_root(self) -> bool:
@@ -131,6 +149,19 @@ RESOURCE_TYPES: tuple[ResourceType, ...] = (
         list_key="onlineEvaluationConfigs",
         get_verb="get-online-evaluation-config",
         id_field="onlineEvaluationConfigId",
+    ),
+    # A DATA-plane type, and the only place a completed evaluation's scores are
+    # readable through the API at all: online-evaluation results land in
+    # CloudWatch, not in a control-plane resource. `list-batch-evaluations` takes
+    # no filter parameters, so the listing is account-wide by construction.
+    ResourceType(
+        id="batch-evaluations",
+        group="evaluation",
+        list_verb="list-batch-evaluations",
+        list_key="batchEvaluations",
+        get_verb="get-batch-evaluation",
+        id_field="batchEvaluationId",
+        service=SERVICE_DATA,
     ),
     # ---- memory ------------------------------------------------------------
     ResourceType(
